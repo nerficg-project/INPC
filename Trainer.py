@@ -85,7 +85,7 @@ class INPCTrainer(GuiTrainer):
             xs = torch.linspace(0.0, 1.0, self.model.tone_mapper.response_params.shape[-1], device='cpu').numpy()
             crf_plot, ax = plt.subplots()
             for ch, color in enumerate(['r', 'g', 'b']):
-                ax.plot(xs, self.model.tone_mapper.response_params[:, ch].clone().detach().flatten().cpu().numpy(), color=color)
+                ax.plot(xs, self.model.tone_mapper.response_params[ch].clone().detach().flatten().cpu().numpy(), color=color)
             # log CRF plot and leaf count
             Framework.wandb.log({
                 'CRF': crf_plot,
