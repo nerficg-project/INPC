@@ -134,7 +134,6 @@ If you use this code for your research projects, please consider a citation:
   title     = {{INPC}: Implicit Neural Point Clouds for Radiance Field Rendering},
   author    = {Hahlbohm, Florian and Franke, Linus and Kappel, Moritz and Castillo, Susana and Eisemann, Martin and Stamminger, Marc and Magnor, Marcus},
   booktitle = {International Conference on 3D Vision},
-  doi       = {tba},
   year      = {2025},
   url       = {https://fhahlbohm.github.io/inpc/}
 }
