@@ -135,6 +135,8 @@ If you use this code for your research projects, please consider a citation:
   author    = {Hahlbohm, Florian and Franke, Linus and Kappel, Moritz and Castillo, Susana and Eisemann, Martin and Stamminger, Marc and Magnor, Marcus},
   booktitle = {International Conference on 3D Vision},
   year      = {2025},
+  page      = {168--178},
+  doi       = {10.1109/3DV66043.2025.00021},
   url       = {https://fhahlbohm.github.io/inpc/}
 }
 ```
