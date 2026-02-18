@@ -1,5 +1,3 @@
-# -- coding: utf-8 --
-
 """
 INPC/Modules/AppearanceField.py: Appearance field module.
 """
@@ -7,7 +5,8 @@ INPC/Modules/AppearanceField.py: Appearance field module.
 import torch
 
 import Framework
-from Methods.INPC.utils import LRDecayPolicy, spherical_contraction, feature_to_opacity
+from Methods.INPC.utils import spherical_contraction, feature_to_opacity
+from Optim.lr_utils import LRDecayPolicy
 import Thirdparty.TinyCudaNN as tcnn
 
 

@@ -13,16 +13,16 @@ cuda_api::forward_wrapper(
     const torch::Tensor& opacities,
     const torch::Tensor& w2c,
     const torch::Tensor& cam_position,
-    const uint width,
-    const uint height,
+    const int width,
+    const int height,
     const float focal_x,
     const float focal_y,
-    const float principal_offset_x,
-    const float principal_offset_y,
+    const float center_x,
+    const float center_y,
     const float near_plane,
     const float far_plane)
 {
-    const uint n_points = positions.size(0);
+    const int n_points = positions.size(0);
     const torch::TensorOptions float_options = torch::TensorOptions().dtype(torch::kFloat).device(torch::kCUDA);
     const torch::TensorOptions byte_options = torch::TensorOptions().dtype(torch::kByte).device(torch::kCUDA);
     torch::Tensor image = torch::empty({4, height, width}, float_options);
@@ -49,8 +49,8 @@ cuda_api::forward_wrapper(
         height,
         focal_x,
         focal_y,
-        principal_offset_x + static_cast<float>(width) * 0.5f,
-        principal_offset_y + static_cast<float>(height) * 0.5f,
+        center_x,
+        center_y,
         near_plane,
         far_plane);
 
@@ -70,7 +70,7 @@ cuda_api::backward_wrapper(
     const torch::Tensor& cam_position,
     const int fragment_point_indices_selector)
 {
-    const uint n_points = positions.size(0);
+    const int n_points = positions.size(0);
     const torch::TensorOptions float_options = torch::TensorOptions().dtype(torch::kFloat).device(torch::kCUDA);
     const torch::TensorOptions half_options = torch::TensorOptions().dtype(torch::kHalf).device(torch::kCUDA);
     torch::Tensor grad_features_view = torch::zeros({n_points, 4}, float_options);
@@ -105,15 +105,15 @@ cuda_api::render_default_wrapper(
     const torch::Tensor& bg_image,
     const torch::Tensor& w2c,
     const torch::Tensor& cam_position,
-    const uint width,
-    const uint height,
+    const int width,
+    const int height,
     const float focal_x,
     const float focal_y,
-    const float principal_offset_x,
-    const float principal_offset_y,
+    const float center_x,
+    const float center_y,
     const float near_plane,
     const float far_plane,
-    const uint n_multisamples)
+    const int n_multisamples)
 {
     const torch::TensorOptions float_options = torch::TensorOptions().dtype(torch::kFloat).device(torch::kCUDA);
     const torch::TensorOptions byte_options = torch::TensorOptions().dtype(torch::kByte).device(torch::kCUDA);
@@ -137,8 +137,8 @@ cuda_api::render_default_wrapper(
         height,
         focal_x,
         focal_y,
-        principal_offset_x + static_cast<float>(width) * 0.5f,
-        principal_offset_y + static_cast<float>(height) * 0.5f,
+        center_x,
+        center_y,
         near_plane,
         far_plane,
         n_multisamples);
@@ -154,12 +154,12 @@ cuda_api::render_preextracted_wrapper(
     const torch::Tensor& bg_image,
     const torch::Tensor& w2c,
     const torch::Tensor& cam_position,
-    const uint width,
-    const uint height,
+    const int width,
+    const int height,
     const float focal_x,
     const float focal_y,
-    const float principal_offset_x,
-    const float principal_offset_y,
+    const float center_x,
+    const float center_y,
     const float near_plane,
     const float far_plane)
 {
@@ -189,8 +189,8 @@ cuda_api::render_preextracted_wrapper(
         height,
         focal_x,
         focal_y,
-        principal_offset_x + static_cast<float>(width) * 0.5f,
-        principal_offset_y + static_cast<float>(height) * 0.5f,
+        center_x,
+        center_y,
         near_plane,
         far_plane);
 

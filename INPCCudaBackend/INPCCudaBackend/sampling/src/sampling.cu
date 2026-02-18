@@ -23,8 +23,8 @@ void cuda_api::compute_viewpoint_weights(
     const float fy,
     const float cx,
     const float cy,
-    const float near,
-    const float far,
+    const float near_plane,
+    const float far_plane,
     const float initial_size)
 {
     compute_viewpoint_weights_cu<<<div_round_up(n_cells, config::block_size_compute_weights), config::block_size_compute_weights>>>(
@@ -40,8 +40,8 @@ void cuda_api::compute_viewpoint_weights(
         fy,
         cx,
         cy,
-        near,
-        far,
+        near_plane,
+        far_plane,
         initial_size);
     CHECK_CUDA(config::debug, "compute_viewpoint_weights_cu");
 }

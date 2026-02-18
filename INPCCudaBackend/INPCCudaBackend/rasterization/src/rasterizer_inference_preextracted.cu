@@ -29,8 +29,8 @@ void inference_preextracted::render(
     const float fy,
     const float cx,
     const float cy,
-    const float near,
-    const float far)
+    const float near_plane,
+    const float far_plane)
 {
     char* per_point_buffers_blob = per_point_buffers_func(required<PerPointBuffers>(n_points));
     PerPointBuffers per_point_buffers = PerPointBuffers::from_blob(per_point_buffers_blob, n_points);
@@ -60,8 +60,8 @@ void inference_preextracted::render(
         fy,
         cx,
         cy,
-        near,
-        far);
+        near_plane,
+        far_plane);
     CHECK_CUDA(inference_config::render_preextracted::debug, "preprocess_cu");
 
     cub::DeviceScan::InclusiveSum(
@@ -89,7 +89,7 @@ void inference_preextracted::render(
         height);
     CHECK_CUDA(inference_config::render_preextracted::debug, "create_fragments_cu");
 
-    const int key_size = extract_end_bit(n_pixels) + 32;
+    const int key_size = extract_end_bit(n_pixels - 1) + 32;
     cub::DeviceRadixSort::SortPairs(
         per_fragment_buffers.cub_workspace,
         per_fragment_buffers.cub_workspace_size,

@@ -28,8 +28,8 @@ void inference::render(
     const float fy,
     const float cx,
     const float cy,
-    const float near,
-    const float far,
+    const float near_plane,
+    const float far_plane,
     const uint n_multisamples)
 {
     const uint n_points_per_multisample = n_points / n_multisamples;
@@ -40,7 +40,7 @@ void inference::render(
     PerPointBuffers per_point_buffers = PerPointBuffers::from_blob(per_point_buffers_blob, n_points_used);
 
     const uint n_pixels = width * height;
-    const int key_size = extract_end_bit(n_pixels) + 32;
+    const int key_size = extract_end_bit(n_pixels - 1) + 32;
     char* per_pixel_buffers_blob = per_pixel_buffers_func(required<training::PerPixelBuffers>(n_pixels));
     training::PerPixelBuffers per_pixel_buffers = training::PerPixelBuffers::from_blob(per_pixel_buffers_blob, n_pixels);
 
@@ -69,8 +69,8 @@ void inference::render(
             fy,
             cx,
             cy,
-            near,
-            far);
+            near_plane,
+            far_plane);
         CHECK_CUDA(inference_config::render::debug, "preprocess_cu");
 
         static cudaStream_t sum_stream = 0;

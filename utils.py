@@ -1,5 +1,3 @@
-# -- coding: utf-8 --
-
 """
 INPC/utils.py: Utility functions for INPC.
 """
@@ -7,37 +5,9 @@ INPC/utils.py: Utility functions for INPC.
 from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
 import torch
 
 from Cameras.Perspective import PerspectiveCamera
-
-
-@dataclass(frozen=True)
-class LRDecayPolicy(object):
-    """Allows for flexible definition of a decay policy for a learning rate."""
-    lr_init: float = 1.0
-    lr_final: float = 1.0
-    lr_delay_steps: int = 0
-    lr_delay_mult: float = 1.0
-    max_steps: int = 1000000
-
-    # taken from https://github.com/sxyu/svox2/blob/master/opt/util/util.py#L78
-    def __call__(self, iteration: int) -> float:
-        """Calculates learning rate for the given iteration."""
-        if iteration < 0 or (self.lr_init == 0.0 and self.lr_final == 0.0):
-            # Disable this parameter
-            return 0.0
-        if self.lr_delay_steps > 0 and iteration < self.lr_delay_steps:
-            # reverse cosine delay
-            delay_rate = self.lr_delay_mult + (1 - self.lr_delay_mult) * np.sin(
-                0.5 * np.pi * np.clip(iteration / self.lr_delay_steps, 0, 1)
-            )
-        else:
-            delay_rate = 1.0
-        t = np.clip(iteration / self.max_steps, 0, 1)
-        log_lerp = np.exp(np.log(self.lr_init) * (1 - t) + np.log(self.lr_final) * t)
-        return delay_rate * log_lerp
 
 
 class TruncExp(torch.autograd.Function):
@@ -111,42 +81,44 @@ class PaddingInfo:
     """Information about padding applied to a camera."""
     original_width: int
     original_height: int
-    original_principal_offset_x: float
-    original_principal_offset_y: float
+    original_center_x: float
+    original_center_y: float
     roi_slices: tuple[slice, slice] = (slice(None), slice(None))
 
-    def unapply(self, camera: 'PerspectiveCamera') -> None:
+    def unapply(self, camera: PerspectiveCamera) -> None:
         """Removes padding from the given camera."""
-        camera.properties.width = self.original_width
-        camera.properties.height = self.original_height
-        camera.properties.principal_offset_x = self.original_principal_offset_x
-        camera.properties.principal_offset_y = self.original_principal_offset_y
+        camera.width = self.original_width
+        camera.height = self.original_height
+        camera.center_x = self.original_center_x
+        camera.center_y = self.original_center_y
 
 
-def adjust_for_unet(camera: 'PerspectiveCamera') -> PaddingInfo:
-    """Adjusts the camera properties to prevent the need for padding inside a U-Net with two downsampling steps."""
+def adjust_for_unet(camera: PerspectiveCamera) -> PaddingInfo:
+    """Adjusts the camera intrinsics to prevent the need for padding inside a U-Net with two downsampling steps."""
     padding_info = PaddingInfo(
-        camera.properties.width,
-        camera.properties.height,
-        camera.properties.principal_offset_x,
-        camera.properties.principal_offset_y
+        camera.width,
+        camera.height,
+        camera.center_x,
+        camera.center_y
     )
     left, right, top, bottom = 0, 0, 0, 0
-    if camera.properties.width % 4 != 0:
-        padding = 4 - camera.properties.width % 4
-        camera.properties.width += padding
+    if camera.width % 4 != 0:
+        padding = 4 - camera.width % 4
+        camera.width += padding
+        camera.center_x += padding / 2
         if padding != 2:
-            camera.properties.principal_offset_x -= 0.5
+            camera.center_x -= 0.5
         left = padding // 2
         right = padding - left
-    if camera.properties.height % 4 != 0:
-        padding = 4 - camera.properties.height % 4
-        camera.properties.height += padding
+    if camera.height % 4 != 0:
+        padding = 4 - camera.height % 4
+        camera.height += padding
+        camera.center_y += padding / 2
         if padding != 2:
-            camera.properties.principal_offset_y -= 0.5
+            camera.center_y -= 0.5
         top = padding // 2
         bottom = padding - top
-    padding_info.roi_slices = slice(top, camera.properties.height - bottom), slice(left, camera.properties.width - right)
+    padding_info.roi_slices = slice(top, camera.height - bottom), slice(left, camera.width - right)
     return padding_info
 
 

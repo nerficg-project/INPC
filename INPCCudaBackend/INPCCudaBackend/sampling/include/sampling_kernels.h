@@ -18,8 +18,8 @@ namespace inpc::sampling {
         const float fy,
         const float cx,
         const float cy,
-        const float near,
-        const float far,
+        const float near_plane,
+        const float far_plane,
         const float initial_size);
     
     __global__ void normalize_weights_cu(

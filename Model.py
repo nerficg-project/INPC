@@ -1,12 +1,10 @@
-# -- coding: utf-8 --
-
 """INPC/Model.py: INPC model implementation."""
 
 import Framework
 
 from Methods.Base.Model import BaseModel
 from Methods.INPC.Modules import *
-from Methods.INPC.utils import LRDecayPolicy
+from Optim.lr_utils import LRDecayPolicy
 
 
 @Framework.Configurable.configure(

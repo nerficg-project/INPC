@@ -25,21 +25,21 @@ namespace inpc::rasterization::training {
         const float fy,
         const float cx,
         const float cy,
-        const float near,
-        const float far)
+        const float near_plane,
+        const float far_plane)
     {
         const uint point_idx = __umul24(blockIdx.x, blockDim.x) + threadIdx.x;
         if (point_idx >= n_points) return;
         // projection and culling
         const float3 position_world = positions[point_idx];
         const float3 position_view = transform_point_affine(w2c, position_world);
-        const float z = -position_view.z;
-        const float inv_z = 1.0f / fmaxf(z, FLT_EPS); // assume near > FLT_EPS
+        const float z = position_view.z;
+        const float inv_z = 1.0f / fmaxf(z, FLT_EPS); // assume near_plane > FLT_EPS
         const float x = position_view.x * inv_z * fx + cx;
         const float y = position_view.y * inv_z * fy + cy;
         const float width_f = static_cast<float>(width);
         const float height_f = static_cast<float>(height);
-        const bool is_visible = z >= near && z <= far && x >= -0.5f && x < width_f + 0.5f && y >= -0.5f && y < height_f + 0.5f;
+        const bool is_visible = z >= near_plane && z <= far_plane && x >= -0.5f && x < width_f + 0.5f && y >= -0.5f && y < height_f + 0.5f;
         // compute and write key/value pairs for each fragment
         const bool instance_00_valid = is_visible && x >= 0.5f && y >= 0.5f;
         const bool instance_01_valid = is_visible && y >= 0.5f && x < width_f - 0.5f;

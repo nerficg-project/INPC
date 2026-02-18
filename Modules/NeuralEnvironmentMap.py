@@ -1,5 +1,3 @@
-# -- coding: utf-8 --
-
 """
 INPC/Modules/NeuralEnvironmentMap.py: Neural environment map module.
 """
@@ -7,8 +5,8 @@ INPC/Modules/NeuralEnvironmentMap.py: Neural environment map module.
 import torch
 
 import Framework
-from Cameras.Base import BaseCamera
-from Methods.INPC.utils import LRDecayPolicy
+from Datasets.utils import View
+from Optim.lr_utils import LRDecayPolicy
 import Thirdparty.TinyCudaNN as tcnn
 
 
@@ -47,9 +45,9 @@ class NeuralEnvironmentMap(torch.nn.Module):
         ]
         return param_groups, schedulers
 
-    def forward(self, camera: 'BaseCamera') -> torch.Tensor:
-        """Returns environment map values for the given camera."""
-        view_dirs_all = camera.getLocalRayDirections() @ camera.properties.R.T
+    def forward(self, view: View) -> torch.Tensor:
+        """Returns environment map values for the given view."""
+        view_dirs_all = view.cam_to_world(view.camera.compute_local_ray_directions(), is_point=False)
         view_dirs_all = torch.nn.functional.normalize(view_dirs_all, p=2, dim=-1)
         view_dirs_all.mul_(0.5).add_(0.5)  # for compatibility with the SH encoding in tiny-cuda-nn
-        return self.net_with_encoding(view_dirs_all).reshape(camera.properties.height, camera.properties.width, 4)
+        return self.net_with_encoding(view_dirs_all).reshape(view.camera.height, view.camera.width, 4)

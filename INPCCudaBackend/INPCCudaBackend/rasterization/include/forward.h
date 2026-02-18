@@ -22,8 +22,8 @@ namespace inpc::rasterization::training {
         const float fy,
         const float cx,
         const float cy,
-        const float near,
-        const float far);
+        const float near_plane,
+        const float far_plane);
 
     __global__ void blend_cu(
         const uint* fragment_offsets,

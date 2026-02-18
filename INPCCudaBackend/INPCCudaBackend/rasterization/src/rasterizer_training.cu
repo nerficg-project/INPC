@@ -31,8 +31,8 @@ int training::forward(
     const float fy,
     const float cx,
     const float cy,
-    const float near,
-    const float far)
+    const float near_plane,
+    const float far_plane)
 {
     char* per_point_buffers_blob = per_point_buffers_func(required<PerPointBuffers>(n_points));
     PerPointBuffers per_point_buffers = PerPointBuffers::from_blob(per_point_buffers_blob, n_points);
@@ -60,8 +60,8 @@ int training::forward(
         fy,
         cx,
         cy,
-        near,
-        far);
+        near_plane,
+        far_plane);
     CHECK_CUDA(forward_config::debug, "preprocess_cu");
 
     static cudaStream_t sum_stream = 0;
@@ -81,7 +81,7 @@ int training::forward(
         sum_stream);
     CHECK_CUDA(forward_config::debug, "cub::DeviceScan::InclusiveSum");
 
-    const int key_size = extract_end_bit(n_pixels) + 32;
+    const int key_size = extract_end_bit(n_pixels - 1) + 32;
     cub::DeviceRadixSort::SortPairs(
         per_point_buffers.cub_workspace,
         per_point_buffers.cub_workspace_size,

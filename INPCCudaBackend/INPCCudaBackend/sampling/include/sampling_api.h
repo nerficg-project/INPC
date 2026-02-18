@@ -17,8 +17,8 @@ namespace inpc::sampling {
         const uint height,
         const float focal_x,
         const float focal_y,
-        const float principal_offset_x,
-        const float principal_offset_y,
+        const float center_x,
+        const float center_y,
         const float near_plane,
         const float far_plane,
         const float initial_size);
@@ -38,8 +38,8 @@ namespace inpc::sampling {
                 const uint height,
                 const float focal_x,
                 const float focal_y,
-                const float principal_offset_x,
-                const float principal_offset_y,
+                const float center_x,
+                const float center_y,
                 const float near_plane,
                 const float far_plane,
                 const float initial_size);
@@ -55,8 +55,8 @@ namespace inpc::sampling {
                 const uint height,
                 const float focal_x,
                 const float focal_y,
-                const float principal_offset_x,
-                const float principal_offset_y,
+                const float center_x,
+                const float center_y,
                 const float near_plane,
                 const float far_plane,
                 const float initial_size);

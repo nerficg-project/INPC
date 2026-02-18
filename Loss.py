@@ -1,5 +1,3 @@
-# -- coding: utf-8 --
-
 """INPC/Loss.py: Loss function."""
 
 import torch
@@ -9,7 +7,7 @@ from Framework import ConfigParameterList
 from Methods.Base.Model import BaseModel
 from Optim.Losses.Base import BaseLoss
 from Optim.Losses.VGG import VGGLoss
-from Optim.Losses.FusedDSSIM import fused_dssim
+from Optim.Losses.DSSIM import fused_dssim
 
 # @torch.compile  # TORCH_COMPILE_NOTE: uncommenting this makes things slightly faster
 def cauchy_loss(input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
@@ -20,15 +18,15 @@ def cauchy_loss(input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
 class INPCLoss(BaseLoss):
     def __init__(self, loss_config: ConfigParameterList, model: 'BaseModel') -> None:
         super().__init__()
-        self.addLossMetric('Cauchy_Color', cauchy_loss, loss_config.LAMBDA_CAUCHY)
-        self.addLossMetric('VGG_Color', VGGLoss(), loss_config.LAMBDA_VGG)
-        self.addLossMetric('DSSIM_Color', fused_dssim, loss_config.LAMBDA_DSSIM)
-        self.addLossMetric('Weight_Decay_Hash_Grid', model.appearance_field.normalized_weight_decay, loss_config.LAMBDA_WEIGHT_DECAY)
+        self.add_loss_metric('Cauchy_Color', cauchy_loss, loss_config.LAMBDA_CAUCHY)
+        self.add_loss_metric('VGG_Color', VGGLoss(), loss_config.LAMBDA_VGG)
+        self.add_loss_metric('DSSIM_Color', fused_dssim, loss_config.LAMBDA_DSSIM)
+        self.add_loss_metric('Weight_Decay_Hash_Grid', model.appearance_field.normalized_weight_decay, loss_config.LAMBDA_WEIGHT_DECAY)
         if model.tone_mapper is None:
-            self.addLossMetric('CRF_Smoothness', lambda: 0.0, 0.0)
+            self.add_loss_metric('CRF_Smoothness', lambda: 0.0, 0.0)
         else:
-            self.addLossMetric('CRF_Smoothness', model.tone_mapper.response_loss, 1.0)
-        self.addQualityMetric('PSNR', torchmetrics.functional.image.peak_signal_noise_ratio)
+            self.add_loss_metric('CRF_Smoothness', model.tone_mapper.response_loss, 1.0)
+        self.add_quality_metric('PSNR', torchmetrics.functional.image.peak_signal_noise_ratio)
 
     @torch.autocast('cuda', dtype=torch.float32)
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:

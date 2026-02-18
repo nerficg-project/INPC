@@ -14,7 +14,7 @@ namespace inpc::sampling {
         int* sample_counts = nullptr;
         int* sample_offsets = nullptr;
 
-        static SumBuffers from_blob(char*& blob, const size_t n_cells) {
+        static SumBuffers from_blob(char*& blob, const uint n_cells) {
             SumBuffers buffers;
             float* float_ptr = nullptr;
             size_t reduce_sum_size = 0;

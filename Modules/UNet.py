@@ -1,5 +1,3 @@
-# -- coding: utf-8 --
-
 """
 INPC/Modules/UNet.py: U-Net implementation.
 FFCResidualBlock implementation is based on FFC: https://github.com/pkumivision/FFC
@@ -7,7 +5,7 @@ FFCResidualBlock implementation is based on FFC: https://github.com/pkumivision/
 
 import torch
 
-from Methods.INPC.utils import LRDecayPolicy
+from Optim.lr_utils import LRDecayPolicy
 
 
 class DoubleConv(torch.nn.Module):
@@ -67,15 +65,15 @@ class FourierUnit(torch.nn.Module):
 
     @torch.autocast('cuda', enabled=False)
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x has shape (1, C, H, W), i.e., (1, 96, H/4, W/4) for the default INPC architecture
+        # x has shape (B, C, H, W), i.e., (B, 96, H/4, W/4) for the default INPC architecture; let Wf = W/2+1
         x = x.float()
-        ffted = torch.fft.rfftn(x, dim=(-2, -1), norm='ortho')  # (B, C, H, W/2+1)
-        ffted = torch.stack((ffted.real, ffted.imag), dim=-1)  # (B, C, H, W/2+1, 2)
-        ffted = ffted.permute(0, 1, 4, 2, 3).contiguous()  # (B, C, 2, H, W/2+1)
-        ffted = ffted.view((1, -1,) + ffted.size()[3:])  # (B, C*2, H, W/2+1)
+        ffted = torch.fft.rfftn(x, dim=(-2, -1), norm='ortho')  # (B, C, H, Wf)
+        B, C, H, Wf = ffted.shape
+        ffted = torch.stack((ffted.real, ffted.imag), dim=-1)  # (B, C, H, Wf, 2)
+        ffted = ffted.permute(0, 1, 4, 2, 3).reshape(B, C * 2, H, Wf)  # (B, C*2, H, Wf)
         ffted = self.conv(ffted)
-        ffted = ffted.view((1, -1, 2,) + ffted.size()[2:]).permute(0, 1, 3, 4, 2).contiguous()  # (B, C, H, W/2+1, 2)
-        ffted = torch.complex(ffted[..., 0], ffted[..., 1])  # (B, C, H, W/2+1)
+        ffted = ffted.reshape(B, C, 2, H, Wf).permute(0, 1, 3, 4, 2)  # (B, C, H, Wf, 2)
+        ffted = torch.complex(ffted[..., 0], ffted[..., 1])  # (B, C, H, Wf)
         output = torch.fft.irfftn(ffted, s=x.shape[-2:], dim=(-2, -1), norm='ortho')  # (B, C, H, W)
         return output
 

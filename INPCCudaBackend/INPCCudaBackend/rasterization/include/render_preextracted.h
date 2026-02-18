@@ -19,8 +19,8 @@ namespace inpc::rasterization::inference_preextracted {
         const float fy,
         const float cx,
         const float cy,
-        const float near,
-        const float far);
+        const float near_plane,
+        const float far_plane);
 
     __global__ void create_fragments_cu(
         const float* point_depths,

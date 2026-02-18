@@ -29,8 +29,8 @@ namespace inpc::rasterization {
             const float fy,
             const float cx,
             const float cy,
-            const float near,
-            const float far);
+            const float near_plane,
+            const float far_plane);
 
         void backward(
             const float* grad_image,
@@ -58,11 +58,11 @@ namespace inpc::rasterization {
             cub::DoubleBuffer<uint64_t> fragment_keys;
             cub::DoubleBuffer<uint> fragment_point_indices;
     
-            static PerPointBuffers from_blob(char*& blob, const size_t n_points) {
+            static PerPointBuffers from_blob(char*& blob, const uint n_points) {
                 PerPointBuffers buffers;
                 obtain(blob, buffers.screen_coords, n_points, 128);
                 obtain(blob, buffers.features_view, n_points, 128);
-                const size_t n_fragments = n_points * 4;
+                const uint n_fragments = n_points * 4;
                 uint64_t* fragment_keys_unsorted;
                 uint64_t* fragment_keys_sorted;
                 uint* fragment_point_indices_unsorted;
@@ -91,7 +91,7 @@ namespace inpc::rasterization {
             uint* fragment_counts;
             uint* fragment_offsets;
     
-            static PerPixelBuffers from_blob(char*& blob, const size_t n_pixels) {
+            static PerPixelBuffers from_blob(char*& blob, const uint n_pixels) {
                 PerPixelBuffers buffers;
                 obtain(blob, buffers.fragment_counts, n_pixels, 128);
                 obtain(blob, buffers.fragment_offsets, n_pixels, 128);
@@ -125,14 +125,14 @@ namespace inpc::rasterization {
             const float fy,
             const float cx,
             const float cy,
-            const float near,
-            const float far,
+            const float near_plane,
+            const float far_plane,
             const uint n_multisamples);
         
         struct PerPointBuffers: public inpc::rasterization::training::PerPointBuffers {
             float* opacities;
     
-            static PerPointBuffers from_blob(char*& blob, const size_t n_points) {
+            static PerPointBuffers from_blob(char*& blob, const uint n_points) {
                 PerPointBuffers buffers;
                 inpc::rasterization::training::PerPointBuffers& base_buffers = buffers;
                 base_buffers = inpc::rasterization::training::PerPointBuffers::from_blob(blob, n_points);
@@ -163,8 +163,8 @@ namespace inpc::rasterization {
             const float fy,
             const float cx,
             const float cy,
-            const float near,
-            const float far);
+            const float near_plane,
+            const float far_plane);
         
         struct PerPointBuffers {
             size_t cub_workspace_size;
@@ -174,7 +174,7 @@ namespace inpc::rasterization {
             uint* n_visible_fragments;
             uint* offsets;
     
-            static PerPointBuffers from_blob(char*& blob, const size_t n_points) {
+            static PerPointBuffers from_blob(char*& blob, const uint n_points) {
                 PerPointBuffers buffers;
                 obtain(blob, buffers.n_visible_fragments, n_points, 128);
                 obtain(blob, buffers.offsets, n_points, 128);
@@ -196,7 +196,7 @@ namespace inpc::rasterization {
             cub::DoubleBuffer<uint64_t> fragment_keys;
             cub::DoubleBuffer<uint> fragment_point_indices;
     
-            static PerFragmentBuffers from_blob(char*& blob, const size_t n_fragments) {
+            static PerFragmentBuffers from_blob(char*& blob, const uint n_fragments) {
                 PerFragmentBuffers buffers;
                 uint64_t* fragment_keys_unsorted;
                 uint64_t* fragment_keys_sorted;
@@ -223,7 +223,7 @@ namespace inpc::rasterization {
         struct PerPixelBuffers {
             uint2* ranges;
     
-            static PerPixelBuffers from_blob(char*& blob, size_t n_pixels) {
+            static PerPixelBuffers from_blob(char*& blob, uint n_pixels) {
                 PerPixelBuffers buffers;
                 obtain(blob, buffers.ranges, n_pixels, 128);
                 return buffers;

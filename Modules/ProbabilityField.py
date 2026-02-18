@@ -1,5 +1,3 @@
-# -- coding: utf-8 --
-
 """
 INPC/Modules/ProbabilityField.py: Probability field module.
 """
@@ -9,9 +7,8 @@ import math
 
 import Framework
 from Logging import Logger
-from Cameras.Perspective import PerspectiveCamera
 from Datasets.Base import BaseDataset
-from Datasets.utils import tensor_to_string
+from Datasets.utils import tensor_to_string, View
 from Methods.INPC.utils import compute_halton_coords
 from Methods.INPC.INPCCudaBackend import ProbabilityFieldSampler, compute_viewpoint_weights
 from CudaUtils.MortonEncoding import morton_encode
@@ -23,14 +20,14 @@ class ProbabilityField(torch.nn.Module):
         super().__init__()
         self.cuda_backend = ProbabilityFieldSampler(Framework.config.GLOBAL.RANDOM_SEED)
 
-    def get_current_weights(self, camera: PerspectiveCamera | None) -> torch.Tensor:
+    def get_current_weights(self, view: View | None) -> torch.Tensor:
         """Returns the current weights of the octree leaves."""
-        if camera is not None:
+        if view is not None:
             weights = compute_viewpoint_weights(
                 centers=self.leaf_centers,
                 levels=self.leaf_levels,
                 weights=self.leaf_weights,
-                camera=camera,
+                view=view,
                 initial_size=self.initial_cell_size[0].item()
             )
         else:
@@ -40,17 +37,17 @@ class ProbabilityField(torch.nn.Module):
 
     @torch.no_grad()
     @torch.autocast('cuda', enabled=False)
-    def generate_samples(self, n_samples: int, camera: PerspectiveCamera | None = None, ensure_visibility: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
-        """Generate sample position from the octree."""
+    def generate_samples(self, n_samples: int, view: View | None = None, ensure_visibility: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+        """Generate sample positions from the octree."""
         # compute weights
-        weights = self.get_current_weights(camera)
+        weights = self.get_current_weights(view)
         indices = torch.multinomial(weights, n_samples, replacement=True)
         samples = self.leaf_centers[indices]
         # add random offset
         samples.add_(torch.rand_like(samples).sub_(0.5).mul_(self.initial_cell_size / 2 ** self.leaf_levels[indices, None]))
         # ensure samples are visible during training # TODO: a C++/CUDA implementation could probably save some time here
-        if camera is not None and ensure_visibility:
-            visibility_mask = camera.projectPoints(samples)[1]
+        if view is not None and ensure_visibility:
+            visibility_mask = view.project_points(samples)[2]
             samples = samples[visibility_mask]
             indices = indices[visibility_mask]
             # re-sample until enough samples are visible, try to avoid more than one re-sample by doing some math
@@ -60,7 +57,7 @@ class ProbabilityField(torch.nn.Module):
                 n_missing = n_samples - samples.shape[0]
                 n_extra_samples = math.ceil(n_missing * expected_visibility_ratio) + undersampling_protection
                 n_extra_samples = min(100_000_000, n_extra_samples)  # limit to avoid OOM for extreme cases
-                extra_samples, extra_indices = self.rejection_sample(n_extra_samples, weights, camera)
+                extra_samples, extra_indices = self.rejection_sample(n_extra_samples, weights, view)
                 n_used = min(n_samples - samples.shape[0], extra_samples.shape[0])
                 extra_samples = extra_samples[:n_used]
                 extra_indices = extra_indices[:n_used]
@@ -69,36 +66,36 @@ class ProbabilityField(torch.nn.Module):
                 indices = torch.cat((indices, extra_indices), dim=0)
         return samples, indices
 
-    def rejection_sample(self, n_samples: int, weights: torch.Tensor, camera: PerspectiveCamera) -> tuple[torch.Tensor, torch.Tensor]:
+    def rejection_sample(self, n_samples: int, weights: torch.Tensor, view: View) -> tuple[torch.Tensor, torch.Tensor]:
         """Re-sample positions with given weights. Used to avoid recursion when including cell corners."""
         indices = torch.multinomial(weights, n_samples, replacement=True)
         samples = self.leaf_centers[indices]
         # add random offset
         samples.add_(torch.rand_like(samples).sub_(0.5).mul_(self.initial_cell_size / 2 ** self.leaf_levels[indices, None]))
         # ensure samples are visible
-        visibility_mask = camera.projectPoints(samples)[1]
+        visibility_mask = view.project_points(samples)[2]
         samples = samples[visibility_mask]
         indices = indices[visibility_mask]
         return samples, indices
 
-    def generate_multisamples(self, n_samples: int, n_multi: int = 4, camera: PerspectiveCamera | None = None) -> torch.Tensor:
+    def generate_multisamples(self, n_samples: int, n_multi: int = 4, view: View | None = None) -> torch.Tensor:
         """Generate multiple sets of sample positions."""
         return self.cuda_backend.generate_samples(
             centers=self.leaf_centers,
             levels=self.leaf_levels,
             weights=self.leaf_weights,
-            camera=camera,
+            view=view,
             n_samples=n_samples * n_multi,
             initial_size=self.initial_cell_size[0].item()
         )
 
-    def generate_expected_samples(self, n_samples: int, n_multi: int, camera: PerspectiveCamera) -> torch.Tensor:
+    def generate_expected_samples(self, n_samples: int, n_multi: int, view: View) -> torch.Tensor:
         """Generate multiple sets of positions samples."""
         return self.cuda_backend.generate_expected_samples(
             centers=self.leaf_centers,
             levels=self.leaf_levels,
             weights=self.leaf_weights,
-            camera=camera,
+            view=view,
             n_samples=n_samples,
             n_multi=n_multi,
             initial_size=self.initial_cell_size[0].item()
@@ -147,7 +144,7 @@ class ProbabilityField(torch.nn.Module):
     def initialize(self, dataset: BaseDataset) -> None:
         """Initialize the octree based on the given dataset."""
         # create initial octree leaves
-        bb_min, bb_max = dataset.getBoundingBox().cuda()
+        bb_min, bb_max = dataset.bounding_box.min_max.cuda()
         axis_lengths = (bb_max - bb_min).abs()
         scaling_factor = (2_097_152 / torch.prod(axis_lengths)) ** (1 / 3)
         resolution = torch.round(axis_lengths * scaling_factor).int()
@@ -158,7 +155,7 @@ class ProbabilityField(torch.nn.Module):
         offset = (new_size - axis_lengths) / 2
         bb_min -= offset
         bb_max += offset
-        Logger.logDebug(f'enlarged bounding box by {tensor_to_string(offset, precision=4)} to ensure cubic cells')
+        Logger.log_debug(f'enlarged bounding box by {tensor_to_string(offset, precision=4)} to ensure cubic cells')
         half_cell_size = initial_cell_size / 2
         start = bb_min + half_cell_size
         end = bb_max - half_cell_size
@@ -237,15 +234,14 @@ class ProbabilityField(torch.nn.Module):
         """Carve the octree based on the dataset."""
         leaf_corners = self._get_leaf_corners().reshape(-1, 3)  # (n_leaves * 8, 3)
         remaining_cells = torch.zeros((self.leaf_centers.shape[0],), dtype=torch.bool, device=self.leaf_centers.device)
-        for camera_properties in Logger.logProgressBar(dataset, desc='training viewpoint carving', leave=False):
-            dataset.camera.setProperties(camera_properties)
-            valid_mask = dataset.camera.projectPoints(leaf_corners)[1]
+        for view in Logger.log_progress(dataset, desc='training viewpoint carving', leave=False):
+            valid_mask = view.project_points(leaf_corners)[2]
             remaining_cells |= valid_mask.reshape(-1, 8).any(dim=1)
         self.leaf_centers.data = self.leaf_centers[remaining_cells].contiguous()
         self.leaf_levels.data = self.leaf_levels[remaining_cells].contiguous()
         self.leaf_weights.data = self.leaf_weights[remaining_cells].contiguous()
         self.leaf_subdivision_scores.data = self.leaf_subdivision_scores[remaining_cells].contiguous()
-        Logger.logDebug(f'removed {(~remaining_cells).sum().item():,} leaves that are not visible from any viewpoint')
+        Logger.log_debug(f'removed {(~remaining_cells).sum().item():,} leaves that are not visible from any viewpoint')
 
     def _get_leaf_corners(self) -> torch.Tensor:
         """Returns the corners of the octree leaves."""

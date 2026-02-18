@@ -19,8 +19,8 @@ namespace inpc::sampling {
         const float fy,
         const float cx,
         const float cy,
-        const float near,
-        const float far,
+        const float near_plane,
+        const float far_plane,
         const float initial_size)
     {
         const uint cell_idx = __umul24(blockIdx.x, blockDim.x) + threadIdx.x;
@@ -29,24 +29,24 @@ namespace inpc::sampling {
         const float3 center = centers[cell_idx];
         const int level = levels[cell_idx];
         const float3 p_view = transform_point_affine(w2c, center);
-        const float z = -p_view.z;
+        const float z = p_view.z;
         const float inv_z = 1.0f / (z + FLT_EPS); // TODO: could avoid the epsilon here
         const float x = p_view.x * inv_z * fx + cx;
         const float y = p_view.y * inv_z * fy + cy;
-        bool valid = (z >= near) & (z <= far)
-                & (x >= 0.0f) & (x < static_cast<float>(width - 1))
-                & (y >= 0.0f) & (y < static_cast<float>(height - 1));
+        bool valid = (z >= near_plane) & (z <= far_plane)
+                & (x >= 0.0f) & (x < static_cast<float>(width))
+                & (y >= 0.0f) & (y < static_cast<float>(height));
         if (!valid) {
             const float half_size = initial_size / float(pow(2, level + 1));
             auto check_if_valid = [&](const float3& offset) {
                 const float3 corner_view = transform_point_affine(w2c, center + half_size * offset);
-                const float corner_z = -corner_view.z;
+                const float corner_z = corner_view.z;
                 const float corner_inv_z = 1.0f / (corner_z + FLT_EPS); // TODO: could avoid the epsilon here
                 const float corner_x = corner_view.x * corner_inv_z * fx + cx;
                 const float corner_y = corner_view.y * corner_inv_z * fy + cy;
-                return (corner_z >= near) & (corner_z <= far)
-                    & (corner_x >= 0.0f) & (corner_x < static_cast<float>(width - 1))
-                    & (corner_y >= 0.0f) & (corner_y < static_cast<float>(height - 1));
+                return (corner_z >= near_plane) & (corner_z <= far_plane)
+                    & (corner_x >= 0.0f) & (corner_x < static_cast<float>(width))
+                    & (corner_y >= 0.0f) & (corner_y < static_cast<float>(height));
             };
             valid = check_if_valid(make_float3(-1.0f, -1.0f, -1.0f))
                 | check_if_valid(make_float3(-1.0f, -1.0f, 1.0f))
@@ -60,7 +60,7 @@ namespace inpc::sampling {
         // compute weight
         float viewpoint_weight = 0.0f;
         if (valid) {
-            const float depth_scale = fmaxf(fabsf(z - near) / far, FLT_EPS);
+            const float depth_scale = fmaxf(fabsf(z - near_plane) / far_plane, FLT_EPS);
             const float size_scale = exp2f(static_cast<float>(level) * 0.5f);
             viewpoint_weight = 1.0f / (depth_scale * size_scale) * weights[cell_idx];
         }

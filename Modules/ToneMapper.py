@@ -1,5 +1,3 @@
-# -- coding: utf-8 --
-
 """
 INPC/Modules/ToneMapper.py: Implementation of a differentiable tone mapping module.
 adapted from ADOP: https://github.com/darglein/ADOP
@@ -8,9 +6,9 @@ adapted from ADOP: https://github.com/darglein/ADOP
 import math
 import torch
 
-from Cameras.Base import BaseCamera
 from Datasets.Base import BaseDataset
-from Methods.INPC.utils import LRDecayPolicy
+from Datasets.utils import View
+from Optim.lr_utils import LRDecayPolicy
 
 
 class ToneMapper(torch.nn.Module):
@@ -32,14 +30,11 @@ class ToneMapper(torch.nn.Module):
         """Set up the exposure parameters."""
         n_cameras = len(dataset.test()) + len(dataset.train())
         exposure_params = torch.zeros(n_cameras)
-        timestamp2index = torch.tensor(n_cameras - 1)
         self.register_parameter('exposure_params', torch.nn.Parameter(exposure_params))
-        self.register_buffer('timestamp2index', timestamp2index)
 
-    def apply_exposure(self, image: torch.Tensor, timestamp: float) -> torch.Tensor:
+    def apply_exposure(self, image: torch.Tensor, view_idx: int) -> torch.Tensor:
         """Apply exposure correction to the image."""
-        camera_idx = int(self.timestamp2index * timestamp)
-        return image * torch.exp2(-self.exposure_params[camera_idx])
+        return image * torch.exp2(-self.exposure_params[view_idx])
 
     def apply_response(self, image: torch.Tensor) -> torch.Tensor:
         """Apply response correction to the image."""
@@ -99,9 +94,9 @@ class ToneMapper(torch.nn.Module):
     def interpolate_testset_exposures(self, dataset: 'BaseDataset') -> None:
         """Interpolate the exposure parameters for the test set."""
         dataset.test()
-        camera_indices = [int(self.timestamp2index * camera_properties.timestamp) for camera_properties in dataset]
         n_cameras = len(self.exposure_params)
-        for idx in camera_indices:
+        for view in dataset:
+            idx = view.global_frame_idx
             if idx == 0:
                 self.exposure_params[idx] = self.exposure_params[1]
             elif idx == n_cameras - 1:
@@ -109,9 +104,8 @@ class ToneMapper(torch.nn.Module):
             else:
                 self.exposure_params[idx] = 0.5 * (self.exposure_params[idx - 1] + self.exposure_params[idx + 1])
 
-    def forward(self, image: torch.Tensor, camera: 'BaseCamera') -> torch.Tensor:
+    def forward(self, image: torch.Tensor, view: View) -> torch.Tensor:
         """Apply tone mapping to the input image."""
-        # FIXME we use timestamp because our GUI allows to change it, thus we can modify the exposure in the GUI
-        image = self.apply_exposure(image, camera.properties.timestamp)
+        image = self.apply_exposure(image, view.global_frame_idx)  # TODO: handle invalid/unseen global_frame_idx
         image = self.apply_response(image)
         return image
