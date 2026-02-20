@@ -16,9 +16,11 @@ from CudaUtils.MortonEncoding import morton_encode
 
 class ProbabilityField(torch.nn.Module):
 
-    def __init__(self) -> None:
+    def __init__(self, use_fused_rejection_sampling: bool) -> None:
         super().__init__()
+        self.use_fused_rejection_sampling = use_fused_rejection_sampling
         self.cuda_backend = ProbabilityFieldSampler(Framework.config.GLOBAL.RANDOM_SEED)
+        self.training_views: list[View] | None = None
 
     def get_current_weights(self, view: View | None) -> torch.Tensor:
         """Returns the current weights of the octree leaves."""
@@ -45,7 +47,7 @@ class ProbabilityField(torch.nn.Module):
         samples = self.leaf_centers[indices]
         # add random offset
         samples.add_(torch.rand_like(samples).sub_(0.5).mul_(self.initial_cell_size / 2 ** self.leaf_levels[indices, None]))
-        # ensure samples are visible during training # TODO: a C++/CUDA implementation could probably save some time here
+        # ensure samples are visible during training
         if view is not None and ensure_visibility:
             visibility_mask = view.project_points(samples)[2]
             samples = samples[visibility_mask]
@@ -78,6 +80,21 @@ class ProbabilityField(torch.nn.Module):
         indices = indices[visibility_mask]
         return samples, indices
 
+    def generate_training_samples(self, n_samples: int, view: View) -> tuple[torch.Tensor, torch.Tensor]:
+        """Generate visible sample positions from the octree."""
+        if self.use_fused_rejection_sampling:
+            samples, indices = self.cuda_backend.generate_training_samples(
+                centers=self.leaf_centers,
+                levels=self.leaf_levels,
+                weights=self.leaf_weights,
+                view=view,
+                n_samples=n_samples,
+                initial_size=self.initial_cell_size[0].item()
+            )
+        else:
+            samples, indices = self.generate_samples(n_samples, view=view, ensure_visibility=True)
+        return samples, indices
+
     def generate_multisamples(self, n_samples: int, n_multi: int = 4, view: View | None = None) -> torch.Tensor:
         """Generate multiple sets of sample positions."""
         return self.cuda_backend.generate_samples(
@@ -104,7 +121,13 @@ class ProbabilityField(torch.nn.Module):
     @torch.autocast('cuda', enabled=False)
     def extract_global(self, n_samples: int, use_morton_order: bool) -> torch.Tensor:
         """Generate quasi-random sample positions from the octree."""
-        weights = self.get_current_weights(None)
+        USE_OLD_GLOBAL_SAMPLING = False  # TODO: make configurable
+        if USE_OLD_GLOBAL_SAMPLING:
+            weights = self.get_current_weights(None)
+        else:
+            weights = torch.zeros_like(self.leaf_weights)
+            for view in Logger.log_progress(self.training_views, desc='computing global sampling weights', leave=False):
+                weights = torch.maximum(self.get_current_weights(view), weights)
         indices = torch.multinomial(weights, n_samples, replacement=True)
         counts = torch.bincount(indices, minlength=weights.shape[0])
         cell_indices_samples = torch.arange(weights.shape[0], dtype=torch.int32, device=weights.device).repeat_interleave(counts)
@@ -143,6 +166,7 @@ class ProbabilityField(torch.nn.Module):
 
     def initialize(self, dataset: BaseDataset) -> None:
         """Initialize the octree based on the given dataset."""
+        dataset.train()
         # create initial octree leaves
         bb_min, bb_max = dataset.bounding_box.min_max.cuda()
         axis_lengths = (bb_max - bb_min).abs()
@@ -185,8 +209,10 @@ class ProbabilityField(torch.nn.Module):
         self.register_buffer('leaf_levels', torch.zeros((centers.shape[0],), dtype=torch.int32, device='cuda'))
         self.register_buffer('leaf_weights', initial_weights.contiguous())
         self.register_buffer('leaf_subdivision_scores', torch.zeros_like(self.leaf_weights))
-        # carve octree based on training viewpoints
-        self.carve(dataset.train())
+        # save all training viewpoints inside the model
+        self.training_views = [view.to_simple() for view in dataset]
+        # carve octree
+        self.carve()
 
     def subdivide(self, threshold: float) -> None:
         """Subdivide leaves with subdivision score > threshold."""
@@ -230,11 +256,11 @@ class ProbabilityField(torch.nn.Module):
         self.leaf_weights.data = torch.cat([self.leaf_weights[~valid_mask], new_weights], dim=0).contiguous()
         self.leaf_subdivision_scores.data = torch.cat([self.leaf_subdivision_scores[~valid_mask], new_subdivision_scores], dim=0).contiguous()
 
-    def carve(self, dataset: BaseDataset) -> None:
-        """Carve the octree based on the dataset."""
+    def carve(self) -> None:
+        """Carve the octree based on the training views."""
         leaf_corners = self._get_leaf_corners().reshape(-1, 3)  # (n_leaves * 8, 3)
         remaining_cells = torch.zeros((self.leaf_centers.shape[0],), dtype=torch.bool, device=self.leaf_centers.device)
-        for view in Logger.log_progress(dataset, desc='training viewpoint carving', leave=False):
+        for view in Logger.log_progress(self.training_views, desc='training viewpoint carving', leave=False):
             valid_mask = view.project_points(leaf_corners)[2]
             remaining_cells |= valid_mask.reshape(-1, 8).any(dim=1)
         self.leaf_centers.data = self.leaf_centers[remaining_cells].contiguous()

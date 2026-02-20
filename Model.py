@@ -8,6 +8,7 @@ from Optim.lr_utils import LRDecayPolicy
 
 
 @Framework.Configurable.configure(
+    USE_FUSED_REJECTION_SAMPLING=True,
     USE_TONE_MAPPER=True,
     USE_FFC_BOCK=True,
 )
@@ -24,7 +25,7 @@ class INPCModel(BaseModel):
 
     def build(self) -> 'INPCModel':
         """Builds the model."""
-        self.probability_field = ProbabilityField()
+        self.probability_field = ProbabilityField(self.USE_FUSED_REJECTION_SAMPLING)
         self.appearance_field = AppearanceField()
         self.background_model = NeuralEnvironmentMap()
         self.unet = UNet(self.USE_FFC_BOCK)
@@ -39,3 +40,12 @@ class INPCModel(BaseModel):
             learnable_components.append(self.tone_mapper)
         param_groups, schedulers = zip(*(component.get_optimizer_param_groups(n_iterations) for component in learnable_components))
         return sum(param_groups, []), sum(schedulers, [])
+
+    def state_dict(self, *args, **kwargs):
+        state = super().state_dict(*args, **kwargs)
+        state['training_views'] = self.probability_field.training_views
+        return state
+
+    def load_state_dict(self, state_dict, strict: bool = True):
+        self.probability_field.training_views = state_dict.pop('training_views', None)
+        return super().load_state_dict(state_dict, strict)

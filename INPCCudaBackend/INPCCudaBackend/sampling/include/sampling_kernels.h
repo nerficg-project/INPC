@@ -12,8 +12,8 @@ namespace inpc::sampling {
         const float4* w2c,
         float* viewpoint_weights,
         const uint n_cells,
-        const uint width,
-        const uint height,
+        const float width,
+        const float height,
         const float fx,
         const float fy,
         const float cx,
@@ -23,9 +23,30 @@ namespace inpc::sampling {
         const float initial_size);
     
     __global__ void normalize_weights_cu(
-        const float* viewpoint_weights_sum,
         float* viewpoint_weights,
+        const float viewpoint_weights_sum,
         const uint n_weights);
+    
+    __global__ void create_training_samples_cu(
+        const float3* centers,
+        const int* levels,
+        const float4* w2c,
+        const float* cdf,
+        float3* sample_positions,
+        int64_t* sample_indices,
+        int* sample_counter,
+        const uint n_cells,
+        const uint n_samples,
+        const uint seed,
+        const float width,
+        const float height,
+        const float fx,
+        const float fy,
+        const float cx,
+        const float cy,
+        const float near_plane,
+        const float far_plane,
+        const float initial_size);
     
     __global__ void create_samples_cu(
         const float3* centers,
@@ -39,8 +60,8 @@ namespace inpc::sampling {
 
     __global__ void compute_sample_counts_cu(
         const float* viewpoint_weights,
-        const float* viewpoint_weights_sum,
         int* sample_counts,
+        const float viewpoint_weights_sum,
         const uint n_samples,
         const uint n_cells);
 

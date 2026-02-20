@@ -28,21 +28,9 @@ class TruncExp(torch.autograd.Function):
         return grad * torch.exp(x.clamp(-15.0, 15.0))
 
 
-# @torch.compile  # TORCH_COMPILE_NOTE: uncommenting this makes things slightly faster
 def feature_to_opacity(features: torch.Tensor) -> torch.Tensor:
     """Converts logspace volume density to opacity in [0, 1]."""
-    return 1.0 - torch.exp(-TruncExp.apply(features))
-
-
-# @torch.compile  # TORCH_COMPILE_NOTE: uncommenting this makes things slightly faster
-def spherical_contraction(positions: torch.Tensor) -> torch.Tensor:
-    """
-    Normalize positions to [0, 1] using the spherical contraction from Mip-NeRF360. Adapted from:
-    https://github.com/jonbarron/camp_zipnerf/blob/16206bd88f37d5c727976557abfbd9b4fa28bbe1/internal/coord.py#L26.
-    """
-    length_squared = positions.square().sum(dim=-1, keepdim=True).clamp_min(1.0)
-    scale = length_squared.sqrt().mul(2).sub(1).div(length_squared).mul(0.25)
-    return positions.mul(scale).add(0.5).clamp(0.0, 1.0)
+    return -torch.expm1(-TruncExp.apply(features))
 
 
 def halton_base(index: int, base: int) -> float:
@@ -152,3 +140,35 @@ class PreextractedPointCloud:
     def is_set(self) -> bool:
         """Returns whether point cloud is currently initialized."""
         return self._initialized
+
+
+@dataclass
+class MultisamplingRingBuffer:
+    """Helper class for multisampled INPC rendering."""
+    size = 0
+    positions: list[torch.Tensor] | list[None] | None = None
+    features: list[torch.Tensor] | list[None] | None = None
+    current_idx: int = 0
+    read_idx: int = 0
+
+    def append(self, positions: torch.Tensor, features: torch.Tensor, new_size: int) -> None:
+        """Sets the current multisampling ring buffer."""
+        if self.size != new_size:
+            self.current_idx = 0
+            self.size = new_size
+            self.positions = [None] * new_size
+            self.features = [None] * new_size
+        self.positions[self.current_idx] = positions
+        self.features[self.current_idx] = features
+        self.current_idx += 1
+        self.current_idx %= self.size
+        self.read_idx = 0
+
+    def get_next(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Returns the pre-extracted point cloud."""
+        if self.positions[self.read_idx] is None:
+            return self.positions[0], self.features[0]
+        positions = self.positions[self.read_idx]
+        features = self.features[self.read_idx]
+        self.read_idx = self.read_idx + 1
+        return positions, features

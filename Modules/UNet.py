@@ -3,8 +3,11 @@ INPC/Modules/UNet.py: U-Net implementation.
 FFCResidualBlock implementation is based on FFC: https://github.com/pkumivision/FFC
 """
 
+from pathlib import Path
 import torch
 
+import Framework
+from Logging import Logger
 from Optim.lr_utils import LRDecayPolicy
 
 
@@ -15,9 +18,9 @@ class DoubleConv(torch.nn.Module):
         super().__init__()
         self.double_conv = torch.nn.Sequential(
             torch.nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-            torch.nn.GELU(),
+            torch.nn.SiLU(inplace=True),
             torch.nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-            torch.nn.GELU(),
+            torch.nn.SiLU(inplace=True),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -107,7 +110,7 @@ class FFC(torch.nn.Module):
         self.conv_local_to_global = torch.nn.Conv2d(n_features_local, n_features_global, 3, padding=1, bias=False)
         self.conv_global_to_local = torch.nn.Conv2d(n_features_global, n_features_local, 3, padding=1, bias=False)
         self.conv_global_to_global = SpectralTransform(n_features_global)
-        self.activation = torch.nn.GELU()
+        self.activation = torch.nn.SiLU(inplace=True)
 
     def forward(self, x_local: torch.Tensor, x_global: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         out_xl = self.conv_local_to_local(x_local) + self.conv_global_to_local(x_global)
@@ -143,22 +146,50 @@ class UNet(torch.nn.Module):
         self.up1 = UpBlock(256, 128)
         self.up2 = UpBlock(128, 64)
         self.end_block = torch.nn.Conv2d(64, 3, kernel_size=1)
+        self.initialized_from_checkpoint = False
 
-    def get_optimizer_param_groups(self, max_iterations: int) -> tuple[list[dict], list[LRDecayPolicy]]:
+    def set_weights(self, checkpoint_path: Path, exclude_residual_block: bool = True) -> None:
+        """Overwrites the current weights with those from the given checkpoint, excluding residual block weights."""
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location='cpu')
+            # Optionally filter out keys that belong to residual_block
+            if exclude_residual_block:
+                checkpoint = {k: v for k, v in checkpoint.items() if not k.startswith('residual_block.')}
+            self.load_state_dict(checkpoint, strict=False)
+        except IOError as e:
+            Logger.log_error(f'failed to load U-Net weights: "{e}"')
+        self.to(Framework.config.GLOBAL.DEFAULT_DEVICE)
+        self.initialized_from_checkpoint = True
+
+    def save_weights(self, path: Path) -> None:
+        """Saves the current weights in a '.pt' file."""
+        try:
+            torch.save(self.state_dict(), path)
+        except IOError as e:
+            Logger.log_error(f'failed to save U-Net weights: "{e}"')
+
+    def get_optimizer_param_groups(self, max_iterations: int, lr_init: float = 3e-4, lr_final: float = 5e-5) -> tuple[list[dict], list[LRDecayPolicy]]:
         """Returns the parameter groups for the optimizer."""
         param_groups = [{'params': self.parameters(), 'lr': 1.0}]
+        lr_delay_steps = 0
+        if self.initialized_from_checkpoint:
+            lr_delay_steps = 12_500
+            Logger.log_info(f'using pretrained weights for U-Net -> setting lr_delay_steps to {lr_delay_steps:,}')
         schedulers = [LRDecayPolicy(
-            lr_init=3.0e-4,
-            lr_final=5.0e-5,
-            lr_delay_steps=0,
-            lr_delay_mult=1.0,
+            lr_init=lr_init,
+            lr_final=lr_final,
+            lr_delay_steps=lr_delay_steps,
+            lr_delay_mult=1e-4,
             max_steps=max_iterations
         )]
         return param_groups, schedulers
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Returns the output of the U-Net for the given input of shape (C, H, W)."""
-        x0 = self.start(x.unsqueeze(0))
+        """Returns the output of the U-Net for the given input of shape ([B, ]C, H, W)."""
+        # add batch dimension if not present
+        if batch_dim_added := x.dim() == 3:
+            x = x[None]
+        x0 = self.start(x)
         x1 = self.down1(x0)
         x = self.down2(x1)
         x = self.residual_block(x)
@@ -166,4 +197,4 @@ class UNet(torch.nn.Module):
         x = self.up2(x, x0)
         x = self.end_block(x)
         x = x * 0.5 + 0.5
-        return x.squeeze()
+        return x[0] if batch_dim_added else x

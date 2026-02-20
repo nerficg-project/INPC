@@ -5,7 +5,8 @@ INPC/Modules/AppearanceField.py: Appearance field module.
 import torch
 
 import Framework
-from Methods.INPC.utils import spherical_contraction, feature_to_opacity
+from Methods.INPC.utils import feature_to_opacity
+from Methods.INPC.INPCCudaBackend import spherical_contraction
 from Optim.lr_utils import LRDecayPolicy
 import Thirdparty.TinyCudaNN as tcnn
 
@@ -17,7 +18,7 @@ class AppearanceField(torch.nn.Module):
         """Initialize submodules."""
         super().__init__()
         self.hash_grid = tcnn.NetworkWithInputEncoding(
-            n_input_dims=3,  # 3d position
+            n_input_dims=3,
             n_output_dims=37,  # SH degree 2 for 4 channels -> 36 features + 1 for opacity
             encoding_config={
                 'otype': 'Grid',
@@ -51,11 +52,8 @@ class AppearanceField(torch.nn.Module):
         )]
         return param_groups, schedulers
 
-    # @torch.compile  # TORCH_COMPILE_NOTE: uncommenting this makes things slightly faster
     def normalized_weight_decay(self) -> torch.Tensor:
         """Normalized weight decay as proposed in Zip-NeRF (https://arxiv.org/abs/2304.06706)."""
-        # FIXME: using torch.compile results in 20% faster training but can cause a quality reduction
-        #  -> likely due to the division being applied element-wise instead of on the sums
         return (
             self.hash_grid.params[6_144:22_528].square().mean() +
             self.hash_grid.params[22_528:153_600].square().mean() +
@@ -73,15 +71,18 @@ class AppearanceField(torch.nn.Module):
         """Computes the appearance of the given positions."""
         positions = spherical_contraction(positions)
         n_points = positions.shape[0]
-        if n_points > batch_size:
-            features_raw = torch.empty(n_points, 37, device=positions.device, dtype=torch.half)
+        if n_points == 0:
+            features_raw = torch.empty(0, 37, dtype=torch.half, device=positions.device)
+        elif n_points <= batch_size:
+            features_raw = self.hash_grid(positions)
+        else:
+            features_raw = torch.empty(n_points, 37, dtype=torch.half, device=positions.device)
             for i in range(0, n_points, batch_size):
                 j = min(i + batch_size, n_points)
                 features_raw[i:j] = self.hash_grid(positions[i:j])
-        else:
-            features_raw = self.hash_grid(positions)
         if return_raw:
             return features_raw.contiguous()
         opacities, features = features_raw.split([1, 36], dim=-1)
-        opacities = feature_to_opacity(opacities)
-        return opacities.contiguous(), features.contiguous()
+        features = features.contiguous()
+        opacities = feature_to_opacity(opacities).contiguous()
+        return features, opacities

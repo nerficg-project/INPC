@@ -35,12 +35,39 @@ def compute_viewpoint_weights(
 
 
 class ProbabilityFieldSampler(torch.nn.Module):
-    def __init__(
-        self,
-        seed: int,
-    ) -> None:
+    def __init__(self, seed: int) -> None:
         super().__init__()
         self.cuda_backend = _C.ProbabilityFieldSamplerCUDA(seed)
+    
+    def generate_training_samples(
+        self,
+        centers: torch.Tensor,
+        levels: torch.Tensor,
+        weights: torch.Tensor,
+        view: View,
+        n_samples: int,
+        initial_size: float,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if not isinstance(view.camera, PerspectiveCamera):
+            raise NotImplementedError
+        if view.camera.distortion is not None:
+            raise NotImplementedError
+        return self.cuda_backend.generate_training_samples(
+            centers,
+            levels,
+            weights,
+            view.w2c,
+            n_samples,
+            view.camera.width,
+            view.camera.height,
+            view.camera.focal_x,
+            view.camera.focal_y,
+            view.camera.center_x,
+            view.camera.center_y,
+            view.camera.near_plane,
+            view.camera.far_plane,
+            initial_size,
+        )
 
     def generate_samples(
         self,

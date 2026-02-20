@@ -28,6 +28,22 @@ namespace inpc::sampling {
             explicit ProbabilityFieldSampler(int64_t seed) : rng(seed) {};
             ~ProbabilityFieldSampler() = default;
 
+            std::tuple<torch::Tensor, torch::Tensor> generate_training_samples_wrapper(
+                const torch::Tensor& centers,
+                const torch::Tensor& levels,
+                const torch::Tensor& weights,
+                const torch::Tensor& w2c,
+                const uint n_samples,
+                const uint width,
+                const uint height,
+                const float focal_x,
+                const float focal_y,
+                const float center_x,
+                const float center_y,
+                const float near_plane,
+                const float far_plane,
+                const float initial_size);
+
             torch::Tensor generate_samples_wrapper(
                 const torch::Tensor& centers,
                 const torch::Tensor& levels,

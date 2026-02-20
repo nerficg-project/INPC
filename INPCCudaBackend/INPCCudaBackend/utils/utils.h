@@ -32,11 +32,11 @@ __device__ __forceinline__ const float3 transform_point_affine(
 }
 
 template <typename T>
-    static void obtain(char*& blob, T*& ptr, std::size_t count, std::size_t alignment) {
-        std::size_t offset = reinterpret_cast<std::uintptr_t>(blob) + alignment - 1 & ~(alignment - 1);
-        ptr = reinterpret_cast<T*>(offset);
-        blob = reinterpret_cast<char*>(ptr + count);
-    }
+static void obtain(char*& blob, T*& ptr, std::size_t count, std::size_t alignment) {
+    std::size_t offset = reinterpret_cast<std::uintptr_t>(blob) + alignment - 1 & ~(alignment - 1);
+    ptr = reinterpret_cast<T*>(offset);
+    blob = reinterpret_cast<char*>(ptr + count);
+}
 
 template<typename T>
 size_t required(size_t N) {

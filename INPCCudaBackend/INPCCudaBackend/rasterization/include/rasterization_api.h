@@ -5,13 +5,14 @@
 
 namespace inpc::rasterization {
 
-    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, int>
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, int, int>
     forward_wrapper(
         const torch::Tensor& positions,
         const torch::Tensor& features,
         const torch::Tensor& opacities,
         const torch::Tensor& w2c,
         const torch::Tensor& cam_position,
+        const int rasterizer_mode,
         const int width,
         const int height,
         const float focal_x,
@@ -29,18 +30,12 @@ namespace inpc::rasterization {
         const torch::Tensor& alpha,
         const torch::Tensor& positions,
         const torch::Tensor& opacities,
-        const torch::Tensor& per_point_buffers,
-        const torch::Tensor& per_pixel_buffers,
-        const torch::Tensor& cam_position,
-        const int fragment_point_indices_selector);
-
-    torch::Tensor
-    render_default_wrapper(
-        const torch::Tensor& positions,
-        const torch::Tensor& features_raw,
-        const torch::Tensor& bg_image,
+        const torch::Tensor& per_primitive_buffers,
+        const torch::Tensor& per_tile_buffers,
+        const torch::Tensor& per_instance_buffers,
         const torch::Tensor& w2c,
         const torch::Tensor& cam_position,
+        const int rasterizer_mode,
         const int width,
         const int height,
         const float focal_x,
@@ -49,16 +44,16 @@ namespace inpc::rasterization {
         const float center_y,
         const float near_plane,
         const float far_plane,
-        const int n_multisamples);
+        const int n_instances,
+        const int instance_primitive_indices_selector);
 
-    torch::Tensor
-    render_preextracted_wrapper(
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+    inference_wrapper(
         const torch::Tensor& positions,
-        const torch::Tensor& features,
-        const torch::Tensor& opacities,
-        const torch::Tensor& bg_image,
+        const torch::Tensor& features_raw,
         const torch::Tensor& w2c,
         const torch::Tensor& cam_position,
+        const int rasterizer_mode,
         const int width,
         const int height,
         const float focal_x,
@@ -66,6 +61,28 @@ namespace inpc::rasterization {
         const float center_x,
         const float center_y,
         const float near_plane,
-        const float far_plane);
+        const float far_plane,
+        const float sigma_world,
+        const float sigma_cutoff);
+    
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor>
+    inference_preextracted_wrapper(
+        const torch::Tensor& positions,
+        const torch::Tensor& features,
+        const torch::Tensor& opacities,
+        const torch::Tensor& scales,
+        const torch::Tensor& w2c,
+        const torch::Tensor& cam_position,
+        const int rasterizer_mode,
+        const int width,
+        const int height,
+        const float focal_x,
+        const float focal_y,
+        const float center_x,
+        const float center_y,
+        const float near_plane,
+        const float far_plane,
+        const float sigma_world,
+        const float sigma_cutoff);
 
 }

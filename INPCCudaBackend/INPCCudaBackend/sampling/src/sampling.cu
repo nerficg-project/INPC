@@ -7,6 +7,7 @@
 #include "pcg32.h"
 #include <functional>
 #include <cub/cub.cuh>
+#include <cstdint>
 
 namespace cuda_api = inpc::sampling;
 
@@ -34,8 +35,8 @@ void cuda_api::compute_viewpoint_weights(
         w2c,
         viewpoint_weights,
         n_cells,
-        width,
-        height,
+        static_cast<float>(width),
+        static_cast<float>(height),
         fx,
         fy,
         cx,
@@ -46,20 +47,52 @@ void cuda_api::compute_viewpoint_weights(
     CHECK_CUDA(config::debug, "compute_viewpoint_weights_cu");
 }
 
-void cuda_api::create_samples(
+void cuda_api::create_training_samples(
     std::function<char* (size_t)> sum_buffers_func,
     const float3* centers,
     const int* levels,
+    const float* weights,
+    const float4* w2c,
     float* viewpoint_weights,
     float* viewpoint_weights_sum,
     float3* sample_positions,
-    const uint n_samples,
+    int64_t* sample_indices,
+    int* sample_counter,
     const uint n_cells,
+    const uint n_samples,
+    const uint width,
+    const uint height,
+    const float fx,
+    const float fy,
+    const float cx,
+    const float cy,
+    const float near_plane,
+    const float far_plane,
     const float initial_size,
     pcg32& rng)
- {
+{
     char* sum_buffers_blob = sum_buffers_func(required<SumBuffers<true>>(n_cells));
     SumBuffers sum_buffers = SumBuffers<true>::from_blob(sum_buffers_blob, n_cells);
+    const float width_f = static_cast<float>(width);
+    const float height_f = static_cast<float>(height);
+
+    compute_viewpoint_weights_cu<<<div_round_up(n_cells, config::block_size_compute_weights), config::block_size_compute_weights>>>(
+        centers,
+        levels,
+        weights,
+        w2c,
+        viewpoint_weights,
+        n_cells,
+        width_f,
+        height_f,
+        fx,
+        fy,
+        cx,
+        cy,
+        near_plane,
+        far_plane,
+        initial_size);
+    CHECK_CUDA(config::debug, "compute_viewpoint_weights_cu");
 
     cub::DeviceReduce::Sum(
         sum_buffers.cub_workspace,
@@ -69,10 +102,17 @@ void cuda_api::create_samples(
         n_cells);
     CHECK_CUDA(config::debug, "cub::DeviceReduce::Sum");
 
-    // TODO: doing the inclusive sum first might be more numerically stable
+    float viewpoint_weights_sum_cpu;
+    cudaMemcpy(&viewpoint_weights_sum_cpu, viewpoint_weights_sum, sizeof(float), cudaMemcpyDeviceToHost);
+    if (viewpoint_weights_sum_cpu <= 0.0f) {
+        cudaMemset(sample_positions, 0, n_samples * sizeof(float3));
+        cudaMemset(sample_indices, -1, n_samples * sizeof(int64_t));
+        return;
+    }
+
     normalize_weights_cu<<<div_round_up(n_cells, config::block_size_normalize_weights), config::block_size_normalize_weights>>>(
-        viewpoint_weights_sum,
         viewpoint_weights,
+        viewpoint_weights_sum_cpu,
         n_cells);
     CHECK_CUDA(config::debug, "normalize_weights_cu");
 
@@ -84,10 +124,81 @@ void cuda_api::create_samples(
         n_cells);
     CHECK_CUDA(config::debug, "cub::DeviceScan::InclusiveSum");
 
+    create_training_samples_cu<<<div_round_up(n_samples, config::block_size_create_training_samples), config::block_size_create_training_samples>>>(
+        centers,
+        levels,
+        w2c,
+        viewpoint_weights,
+        sample_positions,
+        sample_indices,
+        sample_counter,
+        n_cells,
+        n_samples,
+        rng.next_uint(),
+        width_f,
+        height_f,
+        fx,
+        fy,
+        cx,
+        cy,
+        near_plane,
+        far_plane,
+        initial_size);
+    CHECK_CUDA(config::debug, "create_training_samples_cu");
+}
+
+bool cuda_api::compute_cdf(
+    std::function<char* (size_t)> sum_buffers_func,
+    float* viewpoint_weights,
+    float* viewpoint_weights_sum,
+    const uint n_cells)
+{
+    char* sum_buffers_blob = sum_buffers_func(required<SumBuffers<true>>(n_cells));
+    SumBuffers sum_buffers = SumBuffers<true>::from_blob(sum_buffers_blob, n_cells);
+
+    cub::DeviceReduce::Sum(
+        sum_buffers.cub_workspace,
+        sum_buffers.cub_workspace_size,
+        viewpoint_weights,
+        viewpoint_weights_sum,
+        n_cells);
+    CHECK_CUDA(config::debug, "cub::DeviceReduce::Sum");
+
+    float viewpoint_weights_sum_cpu;
+    cudaMemcpy(&viewpoint_weights_sum_cpu, viewpoint_weights_sum, sizeof(float), cudaMemcpyDeviceToHost);
+    if (viewpoint_weights_sum_cpu <= 0.0f) return false;
+
+    normalize_weights_cu<<<div_round_up(n_cells, config::block_size_normalize_weights), config::block_size_normalize_weights>>>(
+        viewpoint_weights,
+        viewpoint_weights_sum_cpu,
+        n_cells);
+    CHECK_CUDA(config::debug, "normalize_weights_cu");
+
+    cub::DeviceScan::InclusiveSum(
+        sum_buffers.cub_workspace,
+        sum_buffers.cub_workspace_size,
+        viewpoint_weights,
+        viewpoint_weights,
+        n_cells);
+    CHECK_CUDA(config::debug, "cub::DeviceScan::InclusiveSum");
+
+    return true;
+}
+
+void cuda_api::create_samples(
+    const float3* centers,
+    const int* levels,
+    const float* cdf,
+    float3* sample_positions,
+    const uint n_samples,
+    const uint n_cells,
+    const float initial_size,
+    pcg32& rng)
+{
     create_samples_cu<<<div_round_up(n_samples, config::block_size_create_samples), config::block_size_create_samples>>>(
         centers,
         levels,
-        viewpoint_weights,
+        cdf,
         sample_positions,
         n_samples,
         n_cells,
@@ -115,10 +226,14 @@ uint cuda_api::compute_sample_distribution(
         n_cells);
     CHECK_CUDA(config::debug, "cub::DeviceReduce::Sum");
 
+    float viewpoint_weights_sum_cpu;
+    cudaMemcpy(&viewpoint_weights_sum_cpu, viewpoint_weights_sum, sizeof(float), cudaMemcpyDeviceToHost);
+    if (viewpoint_weights_sum_cpu <= 0.0f) return 0;
+
     compute_sample_counts_cu<<<div_round_up(n_cells, config::block_size_compute_sample_counts), config::block_size_compute_sample_counts>>>(
         viewpoint_weights,
-        viewpoint_weights_sum,
         sum_buffers.sample_counts,
+        viewpoint_weights_sum_cpu,
         n_samples,
         n_cells);
     CHECK_CUDA(config::debug, "compute_sample_counts_cu")
