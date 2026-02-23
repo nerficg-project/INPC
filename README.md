@@ -113,6 +113,12 @@ If using your custom data fails, you have two options:
 1. (Easy) Re-calibrate using, e.g., `./scripts/colmap.py -i <path/to/your/scene> --camera_mode single` and add `-u` at the end if your images are distorted.
 2. (Advanced) Check the NeRFICG instructions for using custom data [here](https://github.com/nerficg-project/nerficg?tab=readme-ov-file#training-on-custom-image-sequences) and optionally dive into the NeRFICG code to extend one of the dataloaders to handle your data.
 
+### `torch.compile` Usage
+
+For accelerated rendering during inference, we use [`torch.compile`](https://pytorch.org/tutorials/intermediate/torch_compile_tutorial.html) to JIT-compile the U-Net module.
+This reduces rendering times by about 8-10 ms per frame, which is a considerable speedup especially for the rendering mode that uses a pre-extracted global point cloud.
+Due to Windows-specific issues, U-Net compilation is disabled by default. You can try enabling it by setting `RENDERER.USE_COMPILED_UNET_INFERENCE: true` in the configuration file.
+
 ## License and Citation
 This project is licensed under the MIT license (see [LICENSE](LICENSE)).
 
