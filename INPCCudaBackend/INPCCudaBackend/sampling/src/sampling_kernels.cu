@@ -35,7 +35,7 @@ namespace inpc::sampling {
         const float y = p_view.y * inv_z * fy + cy;
         bool valid = (z >= near_plane) & (z <= far_plane) & (x >= 0.0f) & (x < width) & (y >= 0.0f) & (y < height);
         if (!valid) {
-            const float half_size = initial_size / float(pow(2, level + 1));
+            const float half_size = ldexpf(initial_size, -(level + 1));
             auto check_if_valid = [&](const float3& offset) {
                 const float3 corner_view = transform_point_affine(w2c, center + half_size * offset);
                 const float corner_z = corner_view.z;
@@ -107,7 +107,7 @@ namespace inpc::sampling {
             const uint cell_idx = binary_search(cdf, sample, n_cells);
             // compute sample position
             const float3 random_offset = make_float3(rng.next_float(), rng.next_float(), rng.next_float()) - 0.5f;
-            const float scale = 1.0f / static_cast<float>(pow(2, levels[cell_idx])) * initial_size;
+            const float scale = ldexpf(initial_size, -levels[cell_idx]);
             const float3 sample_position = centers[cell_idx] + random_offset * scale;
             // check visibility
             const float z = w2c_r3.x * sample_position.x + w2c_r3.y * sample_position.y + w2c_r3.z * sample_position.z + w2c_r3.w;
@@ -143,7 +143,7 @@ namespace inpc::sampling {
         const uint cell_idx = binary_search(cdf, sample, n_cells);
         // compute sample position
         const float3 random_offset = make_float3(rng.next_float(), rng.next_float(), rng.next_float()) - 0.5f;
-        const float scale = 1.0f / static_cast<float>(pow(2, levels[cell_idx])) * initial_size;
+        const float scale = ldexpf(initial_size, -levels[cell_idx]);
         const float3 sample_position = centers[cell_idx] + random_offset * scale;
         // store sample
         sample_positions[sample_idx] = sample_position;
@@ -199,7 +199,7 @@ namespace inpc::sampling {
         // compute sample position
         rng.advance(sample_idx * 3);
         const float3 random_offset = make_float3(rng.next_float(), rng.next_float(), rng.next_float()) - 0.5f;
-        const float scale = 1.0f / static_cast<float>(pow(2, levels[cell_idx])) * initial_size;
+        const float scale = ldexpf(initial_size, -levels[cell_idx]);
         const float3 sample_position = centers[cell_idx] + random_offset * scale;
         sample_positions[sample_idx] = sample_position;
     }
